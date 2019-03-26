@@ -1,0 +1,30 @@
+package com.qst.work;
+
+
+import com.qst.utils.HbaseUtils;
+import com.qst.utils.PropertiesUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Properties;
+
+/**
+ * created by hkl
+ */
+public class CreateHbaseTableWork {
+
+    private static Logger logger = LoggerFactory.getLogger(CreateHbaseTableWork.class);
+
+    public static void main(String[] args) {
+
+       try{
+           Properties hdfsConfiguration = PropertiesUtils.load("conf/configuration.properties");
+           String table = hdfsConfiguration.getProperty("table");
+           String cf = hdfsConfiguration.getProperty("ColumnFamilyName");
+           String []columnFamilys = cf.split(",");
+           HbaseUtils.createTable(table,columnFamilys);
+       }catch (Exception e){
+            logger.info("create hbase table failed!");
+       }
+    }
+}

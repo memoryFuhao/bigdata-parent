@@ -1,0 +1,19 @@
+package com.qst.test;
+
+import com.qst.utils.HbaseUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class HELLO {
+    private static Logger logger = LoggerFactory.getLogger(HELLO.class);
+    public static void main(String[] args) {
+        try{
+            String table = "HELLO";
+            String []columnFamilys =  {"A","B"};
+            HbaseUtils.createTable(table,columnFamilys);
+        }catch (Exception e){
+            logger.info("create hbase table failed!");
+        }
+
+    }
+}

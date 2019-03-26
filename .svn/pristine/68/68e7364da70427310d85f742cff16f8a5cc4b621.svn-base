@@ -1,0 +1,533 @@
+package com.qst.utils;
+
+import net.sf.json.JSONObject;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.*;
+import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.FilterList;
+import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.*;
+
+/**
+ * HBase Utils
+ */
+
+public class JavaHbaseUtils {
+
+    private static Logger logger = LoggerFactory.getLogger(JavaHbaseUtils.class);
+
+    public static InputStream inputStream = JavaHbaseUtils.class.getClassLoader().getResourceAsStream("conf/configuration.properties");
+
+    static Configuration conf = hbaseConfiguration();
+
+    public static Configuration hbaseConfiguration() {
+        Properties hdfsConfiguration = new Properties() ;
+        Configuration conf=null;
+        try{
+            hdfsConfiguration.load(inputStream);
+            String masterString = hdfsConfiguration.getProperty("hbase.master");
+            String clientString = hdfsConfiguration.getProperty("hbase.zookeeper.property.clientPort");
+            String quorumString = hdfsConfiguration.getProperty("hbase.zookeeper.quorum");
+            conf = HBaseConfiguration.create();
+            conf.set("hbase.master", masterString);
+            conf.set("hbase.zookeeper.property.clientPort", clientString);
+            conf.set("hbase.zookeeper.quorum", quorumString);
+        }
+        catch(Exception e){
+            logger.error("HBase conf is incorrect!");
+        }
+        return conf;
+    }
+
+    /**
+     *
+     * @param hbaseTableName 待检测表名
+     * @return boolean Y/N
+     * @throws Exception
+     */
+    public static boolean checkHBaseTable(String hbaseTableName)  {
+
+        HBaseAdmin hBaseAdmin = null;
+        try {
+            hBaseAdmin = new HBaseAdmin(conf);
+
+            TableName tn = TableName.valueOf(hbaseTableName);
+            boolean isExists = hBaseAdmin.tableExists(tn);
+
+            if (!isExists){logger.info(hbaseTableName + " is not exist!");
+                return false;
+                }
+            else {
+                logger.info(hbaseTableName+" is exist!");
+                return true;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return false;
+    }
+
+    /**
+     * 创建表
+     * @param tableName 表名
+     * @param family 列族s
+     * @throws Exception IOException输入输出异常
+     */
+    public static void createTable(String tableName, String[] family)  {
+
+        HBaseAdmin admin = null;
+        try {
+            admin = new HBaseAdmin(conf);
+
+            if (!admin.tableExists(tableName)) {
+                HTableDescriptor desc = new HTableDescriptor(TableName.valueOf(tableName));
+                for (int i = 0; i < family.length; i++)
+                    desc.addFamily(new HColumnDescriptor(family[i]));
+                admin.createTable(desc);
+                admin.close();
+                logger.info(new StringBuilder("Create HBase success! this TableName is:").append(tableName).toString());
+            } else {
+                logger.info(tableName + "is exist!");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 创建表
+     * @param tableName 表名
+     * @param family 列族
+     * @throws Exception IOException输入输出异常
+     */
+    public static void createTable(String tableName, String family)  {
+        HBaseAdmin admin = null;
+        try {
+            admin = new HBaseAdmin(conf);
+
+            if (!admin.tableExists(tableName)) {
+               HTableDescriptor desc = new HTableDescriptor(TableName.valueOf(tableName));
+               desc.addFamily(new HColumnDescriptor(family));
+               admin.createTable(desc);
+
+               logger.info(new StringBuilder("Create HBase success! this TableName is:").append(tableName).toString());
+            }
+            else {
+                logger.info(tableName+"is exist!");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                admin.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * hkl
+     * @param tablename
+     * @param put
+     */
+
+    public static void put(String tablename, Put put)throws Exception{
+
+        HTable hTable = null;
+
+        hTable = new HTable(conf, tablename);
+        hTable.setAutoFlush(false, true);
+        hTable.put(put);
+        hTable.flushCommits();
+        try {
+            hTable.close();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+    }
+
+    //hava high speed;
+    public static void put(String tablename, List<Put> putList)throws Exception{
+
+        HTable hTable = null;
+
+        hTable = new HTable(conf, tablename);
+        hTable.setAutoFlush(false);
+        hTable.setWriteBufferSize(128*1024);
+        for(Put put :putList){
+            hTable.put(put);
+        }
+        hTable.flushCommits();
+        try {
+            hTable.close();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 推送数据（插入数据）单列数据
+     * @param tablename 表名
+     * @param rowkey 行键
+     * @param family 列族
+     * @param column 列
+     * @param data 列的值，为doule类型
+     * @throws Exception IOException输入输出异常
+     */
+    public static  void put(String tablename, String rowkey, String family, String column, String data){
+        HTable hTable=null;
+        try{
+            hTable = new HTable(conf, tablename);
+            hTable.setAutoFlush(false, true);
+            Put put = new Put(Bytes.toBytes(rowkey));
+            put.add(Bytes.toBytes(family), Bytes.toBytes(column),
+                    Bytes.toBytes(data));
+            hTable.put(put);
+            hTable.flushCommits();
+
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("insert unsuccessfully,tableName:").append(tablename).append(",Rowkey:")
+                    .append(rowkey).append(",FamilyName:").append(family).append(",the reason:").append(e.getMessage()).toString());
+        }
+        finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 推送数据（插入String数据）单列数据
+     * @param tablename 表名
+     * @param rowkey 行键
+     * @param family 列族
+     * @param column 列
+     * @param data 列的值，为String类型
+     * @throws Exception IOException输入输出异常
+     */
+    public static void putString(String tablename, String rowkey, String family, String column, String data){
+        HTable hTable=null;
+        try{
+            hTable = new HTable(conf, tablename);
+            hTable.setAutoFlush(false, true);
+            Put put = new Put(Bytes.toBytes(rowkey));
+            put.add(Bytes.toBytes(family), Bytes.toBytes(column), Bytes.toBytes(data));
+            hTable.put(put);
+            hTable.flushCommits();
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("insert unsuccessfully,tableName:").append(tablename).append(",Rowkey:")
+                    .append(rowkey).append(",FamilyName:").append(family).append(",the reason:").append(e.getMessage()).toString());
+        }
+        finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 推送数据（插入数据）单个列族数据
+     * @param tablename 表名
+     * @param rowkey 行键
+     * @param family 列族
+     * @param column 一整列
+     * @param value 一整列的数据值，类型为String
+     * @throws Exception IOException输入输出异常
+     */
+    public static void put(String tablename, String rowkey, String family, List<String> column, List<String> value)throws Exception{
+        HTable hTable=null;
+        try{
+            hTable= new HTable(conf, tablename);
+            // hTable.setAutoFlush(false);
+            Put put = new Put(Bytes.toBytes(rowkey));
+            for (int i = 0; i < column.size(); i++) {
+                put.add(Bytes.toBytes(family), Bytes.toBytes(column.get(i)),
+                    Bytes.toBytes(value.get(i)));
+            }
+            hTable.put(put);
+            hTable.flushCommits();
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("insert unsuccessfully,tableName:").append(tablename).append(",Rowkey:")
+                    .append(rowkey).append(",FamilyName:").append(family).append(",the reason:").append(e.getMessage()).toString());
+            throw e;
+        }
+        finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 推送数据（插入数据）单个列族数据
+     * @param tablename 表名
+     * @param rowkey 行键
+     * @param family 列族
+     * @param column 一整列
+     * @param value 一整列的数据值，类型为String
+     * @throws Exception IOException输入输出异常
+     */
+    public static void put(String tablename, String rowkey, String family, String[] column, List<String> value) {
+        HTable hTable=null;
+        try{
+            hTable= new HTable(conf, tablename);
+            // hTable.setAutoFlush(false);
+            Put put = new Put(Bytes.toBytes(rowkey));
+            for (int i = 0; i < column.length; i++) {
+                put.add(Bytes.toBytes(family), Bytes.toBytes(column[i]),
+                        Bytes.toBytes(value.get(i)));
+            }
+            hTable.put(put);
+            hTable.flushCommits();
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("insert unsuccessfully,tableName:").append(tablename).append(",Rowkey:")
+                    .append(rowkey).append(",FamilyName:").append(family).append(",the reason:").append(e.getMessage()).toString());
+        }
+        finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 通过行键获取数据
+     * @param tablename 表名
+     * @param row 行键
+     * @param family 列族
+     * @param column 列
+     * @throws Exception IOException输入输出异常
+     */
+    public void get(String tablename, String row, String family, String column) {
+        HTable hTable =null;
+        try{
+            hTable = new HTable(conf, tablename);
+            Get get = new Get(Bytes.toBytes(row));
+            get.addColumn(Bytes.toBytes(family), Bytes.toBytes(column));
+            Result result = hTable.get(get);
+            byte[] val = result.getValue(Bytes.toBytes(family), Bytes.toBytes(column));
+
+            logger.info(column + " value is: " + Bytes.toString(val));
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("insert unsuccessfully,tableName:").append(tablename).
+                    append(",FamilyName:")
+                    .append(family).append(",the reason:").append(e.getMessage()).toString());
+        }
+        finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * convert hbase data  to jsonString
+     * @param tablename
+     * @param rowkey
+     * @return jsonstring
+     */
+    public static String convertToJsonStr(String tablename, String rowkey){
+        HTable hTable = null;
+        String s = "";
+        try{
+            hTable = new HTable(conf, tablename);
+            Get get = new Get(Bytes.toBytes(rowkey));
+            Result result = hTable.get(get);
+            net.sf.json.JSONObject colValues = new net.sf.json.JSONObject();
+            for (KeyValue kv : result.raw()){
+                colValues.put(Bytes.toString(kv.getQualifier()), Bytes.toString(kv.getValue()));
+            }
+            s = colValues.toString();
+        }catch (Exception e){
+            logger.error(new StringBuilder("convertToJsonStr unsuccessfully,tableName:").append(tablename)
+                    .append(",the reason:").append(e.getMessage()).toString());
+        }
+        return s;
+    }
+
+    /**
+     * 浏览数据
+     * @param tablename 表名
+     * @throws Exception IOException输入输出异常
+     *
+     */
+    public static void scan(String tablename)  {
+        HTable hTable=null;
+        try{
+            hTable = new HTable(conf, tablename);
+            Scan scan = new Scan();
+            ResultScanner res = hTable.getScanner(scan);
+            for (Result r : res) {
+                logger.info(" scan: " + r);
+            }
+
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("insert unsuccessfully,tableName:").append(tablename)
+                    .append(",the reason:").append(e.getMessage()).toString());
+        }
+        finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 浏览指定行键范围的数据
+     * @param tablename 表名
+     * @param startrowkey 开始行键值
+     * @param endrowkey 结束行键值
+     * @throws Exception IOException输入输出异常
+     * @return 查询结果
+     */
+    public ResultScanner timeScan(String tablename, String startrowkey, String endrowkey) {
+        ResultScanner res=null;
+        HTable hTable=null;
+        try{
+            hTable = new HTable(conf, tablename);
+            byte[] begin = Bytes.toBytes(startrowkey);
+            byte[] end = Bytes.toBytes(endrowkey);
+
+            Scan scan = new Scan();
+            scan.setStartRow(begin);
+            scan.setStopRow(end);
+            res = hTable.getScanner(scan);
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("insert unsuccessfully,tableName:").append(tablename).
+                    append(",startrowkey:").append(startrowkey).append("endrowkey").append(endrowkey)
+                    .append(",the reason:").append(e.getMessage()).toString());
+         res = null;
+        }
+        finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return res;
+    }
+
+
+    /**
+     * 浏览指定列族指定条件的数据
+     * @param tablename 表名
+     * @param familyName 列族名
+     * @param jsonSearchCommand joson格式的数据
+     * @throws Exception IOException输入输出异常
+     * @return 查询结果
+     */
+    public ResultScanner jsonScan(String tablename,String familyName, String jsonSearchCommand) {
+        ResultScanner res=null;
+        HTable hTable=null;
+        try{
+            hTable = new HTable(conf, tablename);
+            Map<String,String> searchCommandMap=new HashMap<>();
+            try{
+                JSONObject jsonObject= JSONObject.fromObject(jsonSearchCommand);
+                Iterator iterator=jsonObject.keys();
+                while(iterator.hasNext()){
+                    String key=iterator.next().toString();
+                    searchCommandMap.put(key,jsonObject.getString(key));
+                }
+            }catch (Exception e){
+                logger.error("query exception" + e.toString());
+                e.printStackTrace();
+            }
+            if(searchCommandMap.isEmpty()){
+                logger.error("query is null");
+                res = null;
+            }
+            FilterList filterList = new FilterList();
+            for(String key:searchCommandMap.keySet()){
+                SingleColumnValueFilter filter = new SingleColumnValueFilter(
+                        Bytes.toBytes(familyName),
+                        Bytes.toBytes(key),
+                        CompareFilter.CompareOp.EQUAL,
+                        Bytes.toBytes(searchCommandMap.get(key)));
+                filter.setFilterIfMissing(true);
+                filterList.addFilter(filter);
+            }
+            Scan scan = new Scan();
+            scan.setFilter(filterList);
+            res = hTable.getScanner(scan);
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("Read hbase table failed:").append(tablename).append(",query :").append(jsonSearchCommand)
+                    .append(e.getMessage()).toString());
+            res = null;
+        }finally {
+            try {
+                hTable.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return res;
+    }
+
+    /**
+     * 删除表
+     * @param tablename 表名
+     * @return true或者false，是否删除表成功
+     * @throws Exception IOException输入输出异常
+     */
+    public boolean deleteTable(String tablename)  {
+        boolean result = false;
+        HBaseAdmin admin=null;
+        try{
+            admin= new HBaseAdmin(conf);
+            if (admin.tableExists(tablename)) {
+                admin.disableTable(tablename);
+                admin.deleteTable(tablename);
+                admin.close();
+                result = true;
+                logger.info(new StringBuilder("HBase table is deleted successfully:").append(tablename).toString());
+            }
+            else {
+                ;
+            }
+        }
+        catch(Exception e){
+            logger.error(new StringBuilder("HBase table is deleted unsuccessfully,tableName:").append(tablename).append(",the reason:").append(e.getMessage()).toString());
+        }
+        finally {
+            try {
+                admin.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return result;
+    }
+}

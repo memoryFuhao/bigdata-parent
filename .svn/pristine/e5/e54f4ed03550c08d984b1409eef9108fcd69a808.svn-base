@@ -1,0 +1,22 @@
+# hbase
+# fs.defaultFS = hdfs://pro-master01:8020/
+hbase.master = master
+hbase.zookeeper.property.clientPort = 2181
+# hbase.zookeeper.quorum = pro-slave07
+hbase.zookeeper.quorum = master
+
+table = video
+# 列族名要和相应的objtype位置对应
+# 如果ColumnFamilyName = vehicle,ride,human 那么ObjTypes = 2,4,1
+ColumnFamilyName = human,vehicle,ride
+ObjTypes = 1,2,4
+
+# kafka
+# broker list
+broker.list = master:9092,slave1:9092,slave2:9092,slave3:9092
+#broker.list = master:9092
+# comsumer group
+group = spark_json_test_group
+# topic
+topics = test2
+

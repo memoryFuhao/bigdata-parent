@@ -1,0 +1,20 @@
+package com.qst.test
+
+import java.io.{BufferedReader, FileReader}
+
+import org.apache.kafka.clients.producer.ProducerRecord
+
+import scala.io.Source
+
+class Test {
+
+}
+object Test{
+  def main(args: Array[String]): Unit = {
+
+    val file = Source.fromFile(args(0))
+    for(line <- file.getLines()){
+     println(line)
+    }
+  }
+}

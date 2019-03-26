@@ -1,0 +1,785 @@
+package com.video.bigdata.bigdatasolr.service.impl;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONException;
+import com.alibaba.fastjson.JSONObject;
+import com.video.bigdata.bigdatasolr.constant.ConditionType;
+import com.video.bigdata.bigdatasolr.constant.CollectionEnum;
+import com.video.bigdata.bigdatasolr.constant.ObjType;
+import com.video.bigdata.bigdatasolr.service.ISolrService;
+import com.video.bigdata.bigdatasolr.utils.FastJsonUtils;
+import com.video.bigdata.bigdatasolr.utils.HbaseUtils;
+import com.video.bigdata.bigdatasolr.utils.JsonUtils;
+import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.logging.slf4j.SLF4JLogger;
+import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.impl.CloudSolrServer;
+import org.apache.solr.client.solrj.request.UpdateRequest;
+import org.apache.solr.client.solrj.response.FacetField;
+import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.client.solrj.response.UpdateResponse;
+import org.apache.solr.common.SolrDocument;
+import org.apache.solr.common.SolrDocumentList;
+import org.apache.solr.common.SolrInputDocument;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * @author liwen
+ **/
+@Service
+public class SolrService implements ISolrService {
+
+    private static final Logger log = LoggerFactory.getLogger(SLF4JLogger.class);
+    static final String zkHost = "master:2181,slave1:2181,slave2:2181,slave3:2181/solr";
+    static final int socketTimeout = 20000;
+    static final int zkConnectTimeout = 1000;
+    //Solr5之后把Server字样都改为了Client，使用的是CloudSolrClient
+    static CloudSolrServer cloudSolrServer = null;
+
+    //define hbase table name;
+    static final String tableName = "video";
+
+    static {
+        cloudSolrServer = new CloudSolrServer(zkHost);
+        cloudSolrServer.setZkClientTimeout(zkConnectTimeout);
+        cloudSolrServer.setZkConnectTimeout(socketTimeout);
+        cloudSolrServer.connect();
+    }
+
+    /**
+     * 查找
+     *
+     * @param paramsJson
+     */
+    public String query(String paramsJson) {
+        log.info("query method's paramJson：" + paramsJson);
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        JSONObject jsonObject = JSON.parseObject(paramsJson);
+        String collectionName = jsonObject.getString("collectionName").replace(" ", "");
+        if (StringUtils.isBlank(collectionName)) {
+            return "{'error':'collectionName is null!please add the value of collectionName in paramsJson'}";
+        }
+        if (!CollectionEnum.checkCollecionIsExist(collectionName)) {
+            return "{'error':'The collectionName of " + collectionName + " is not exist!'}";
+        }
+        cloudSolrServer.setDefaultCollection(collectionName);
+
+        SolrQuery query = resolveParams(jsonObject.getJSONArray("params"));
+        if (StringUtils.isNotBlank(jsonObject.getString("orderField"))) {
+            query.setSort(jsonObject.getString("orderField"),
+                    jsonObject.getString("order").equals("ASC") ? SolrQuery.ORDER.asc : SolrQuery.ORDER.desc);
+        }
+        Integer pageNum = jsonObject.getInteger("pageNum");
+        Integer pageSize = jsonObject.getInteger("pageSize");
+        if (pageNum != null) {
+            if (pageSize == null) {
+                pageSize = 10;
+            }
+        } else {
+            //默认第一页，每页10条
+            pageNum = 1;
+            pageSize = 10;
+        }
+        query.setStart((pageNum - 1) * pageSize);
+        query.setRows(pageSize);
+        try {
+            QueryResponse response = cloudSolrServer.query(query);
+            SolrDocumentList docs = response.getResults();
+            List<String> rowKeys = new LinkedList<>();
+            for (int i = 0; i < docs.size(); i++) {
+                rowKeys.add(docs.get(i).get("id").toString());
+            }
+            final String resultJson = HbaseUtils.getJsonResults(tableName, rowKeys);
+            return StringUtils.isBlank(resultJson) ? "{'resultBeans':'result is null'}" : resultJson;
+        } catch (Exception e) {
+            log.error("查询错误", e);
+            return "{'error':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        }
+    }
+
+    /**
+     * 分组统计
+     *
+     * @param paramsJson
+     */
+    public String queryByGroup(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        try {
+            JSONObject jsonObject = JSON.parseObject(paramsJson);
+            String collectionName = jsonObject.getString("collectionName").replace(" ", "");
+            if (StringUtils.isBlank(collectionName)) {
+                return "{'error':'collectionName is null!please add the value of collectionName in paramsJson'}";
+            }
+            if (!CollectionEnum.checkCollecionIsExist(collectionName)) {
+                return "{'error':'The collectionName of " + collectionName + " is not exist!'}";
+            }
+            cloudSolrServer.setDefaultCollection(collectionName);
+            SolrQuery query = new SolrQuery();
+            query.set("q", "*:*");
+            //具体请查询group和facet的区别，多个字段group使用facet.pivot
+            query.setFacet(true);
+            JSONArray fieldArray = jsonObject.getJSONArray("field");
+            if (fieldArray == null || fieldArray.size() == 0) {
+                return "{'error':'field is null!'}";
+            }
+            String[] fields = new String[fieldArray.size()];
+            for (int i = 0; i < fieldArray.size(); i++) {
+                fields[i] = fieldArray.getString(i);
+            }
+            //query.add("facet.pivot",fieldBuffer.toString());
+            query.addFacetField(fields);
+            query.setFacetLimit(jsonObject.getInteger("limit") == null ? 10 : jsonObject.getInteger("limit"));
+            String timeField = jsonObject.getString("timeField");
+            if (StringUtils.isNotBlank(timeField)) {
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+                String from = jsonObject.getString("from");
+                String to = jsonObject.getString("to");
+                String gap = jsonObject.getString("gap");
+                query.addDateRangeFacet(timeField, sdf.parse(from), sdf.parse(to), gap);
+            }
+            QueryResponse queryResponse = cloudSolrServer.query(query);
+            List<FacetField> facetFields = queryResponse.getFacetFields();//返回facet列表
+            Map<String, Object> map = new HashMap<>();
+            for (FacetField facet : facetFields) {
+                List<FacetField.Count> counts = facet.getValues();
+                for (FacetField.Count count : counts) {
+                    map.put(count.getName(), count.getCount());
+                }
+            }
+            return JSON.toJSONString(map);
+        } catch (Exception e) {
+            log.error("分组统计异常", e);
+            return "{'error':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        }
+    }
+
+    public String queryByCollections(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        JSONObject jsonObject = JSONObject.parseObject(paramsJson);
+        JSONArray collectionNames = jsonObject.getJSONArray("collectionName");
+        if (collectionNames == null || collectionNames.isEmpty()) {
+            return "{'error':'collectionName array is null!please add the value of collectionName in paramsJson'}";
+        }
+        JSONArray paramsArray = jsonObject.getJSONArray("params");
+        SolrQuery query = resolveParams(paramsArray);
+        Integer pageNum = jsonObject.getInteger("pageNum");
+        Integer pageSize = jsonObject.getInteger("pageSize");
+        if (pageNum != null) {
+            if (pageSize == null) {
+                pageSize = 10;
+            }
+        } else {
+            //默认第一页，每页10条
+            pageNum = 1;
+            pageSize = 10;
+        }
+        query.setStart((pageNum - 1) * pageSize);
+        query.setRows(pageSize);
+        JSONArray resultArrayJson = new JSONArray();
+        String result = null;
+        try {
+            List<String> rowKeys = new LinkedList<>();
+            for (int i = 0; i < collectionNames.size(); i++) {
+                if (!CollectionEnum.checkCollecionIsExist(collectionNames.getString(i))) {
+                    return "{'error':'The collectionName of " + collectionNames.getString(i) + " is not exist!'}";
+                }
+                String collectionName = collectionNames.getString(i).replace(" ", "");
+                cloudSolrServer.setDefaultCollection(collectionName);
+                QueryResponse queryResponse = cloudSolrServer.query(query);
+                SolrDocumentList solrDocuments = queryResponse.getResults();
+                for (int j = 0; j < solrDocuments.size(); j++) {
+                    rowKeys.add(solrDocuments.get(j).get("id").toString());
+                }
+                final JSONArray jsonArray = HbaseUtils.convertToJsonArray(tableName, rowKeys);
+                resultArrayJson.addAll(jsonArray);
+            }
+            result = resultArrayJson.toJSONString();
+        } catch (SolrServerException e) {
+            log.error("多个Collections查询异常", e);
+            return "{'error':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        }
+        return (result == null || result.equals("null")) ? "{ 'resultBeans': 'null'}" : result;
+    }
+
+    /**
+     * 添加索引
+     */
+    @Deprecated
+    public String addIndex(String paramsJson) {
+        try {
+            if (StringUtils.isBlank(paramsJson)) {
+                return "{'error':'parameters is empty!'}";
+            }
+            JSONObject jsonObject = JSON.parseObject(paramsJson);
+            String collectionName = jsonObject.getString("collectionName");
+            cloudSolrServer.setDefaultCollection(collectionName);
+            JSONArray beans = jsonObject.getJSONArray("beans");
+            int rows = 0;
+            for (int i = 0; i < beans.size(); i++) {
+                SolrInputDocument solrInputDocument = new SolrInputDocument();
+                Map<String, Object> map = new HashMap<String, Object>();
+                JsonUtils.objectAnalysis(null, beans.getJSONObject(i), map);
+                Set<Map.Entry<String, Object>> entries = map.entrySet();
+                for (Map.Entry<String, Object> entry : entries) {
+                    solrInputDocument.setField(entry.getKey(), entry.getValue());
+                }
+                UpdateResponse updateResponse = cloudSolrServer.add(solrInputDocument);
+                cloudSolrServer.commit();
+                rows++;
+                log.info("添加数据返回:" + updateResponse.toString());
+            }
+            return String.format("{'rows':%s}", rows);
+        } catch (Exception e) {
+            log.error("添加索引异常", e);
+            return "";
+        }
+    }
+
+    /**
+     * 添加数据
+     *
+     * @param paramsJson
+     * @return
+     */
+    public String addDataAndIndex(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        JSONObject jsonObject = null;
+        try {
+            jsonObject = JSON.parseObject(paramsJson);
+            String collectionName = jsonObject.getString("collectionName").replace(" ", "");
+            if (StringUtils.isBlank(collectionName)) {
+                return "{'error':'collectionName is null'}";
+            }
+            if (!CollectionEnum.checkCollecionIsExist(collectionName)) {
+                return "{'error':'The collectionName of " + collectionName + " is not exist!'}";
+            }
+            JSONArray beans = jsonObject.getJSONArray("beans");
+            if (beans == null || beans.size() == 0) {
+                return "{'error':'beans is null'}";
+            }
+            if (beans.size() > 0) {
+                List<Put> putList = new ArrayList<>();
+                for (int i = 0; i < beans.size(); i++) {
+                    //判断数组里面的接口是否属于同一Collection，不属于直接返回，不能入库。
+                    JSONObject object = beans.getJSONObject(i);
+                    final Integer objType = object.getInteger("objType");
+                    if (objType == null) {
+                        return "{'Error':'The objType is null!'}";
+                    }
+                    final String typeName = ObjType.getTypeName(objType);
+                    if (!typeName.equals(collectionName)) {
+                        return "{'Data Error':'The data of array is not belonged to one type!'}";
+                    }
+                    Put put = FastJsonUtils.dataAnalysis(object,
+                            CollectionEnum.getHBaseColumnFamilyNameByCollectionName(collectionName));
+                    putList.add(put);
+                }
+                HbaseUtils.put(tableName, putList);
+            } else {
+                return "{'error':'beans is null'}";
+            }
+            return "{'rows':" + beans.size() + "}";
+        } catch (JSONException e) {
+            log.error("Json解析错误", e);
+            return "{'FormatError':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        } catch (Exception e) {
+            log.error("添加数据异常", e);
+            return "{'error':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        }
+    }
+
+    /**
+     * 通过条件删除指定Collection中的Index
+     *
+     * @param paramsJson
+     */
+    @Deprecated
+    public String deleteIndex(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        JSONObject jsonObject = null;
+        try {
+            jsonObject = JSON.parseObject(paramsJson);
+            String collectionName = jsonObject.getString("collectionName");
+            if (StringUtils.isBlank(collectionName)) {
+                return "{'error':'collectionName is null'}";
+            }
+            cloudSolrServer.setDefaultCollection(collectionName);
+            JSONArray params = jsonObject.getJSONArray("params");
+            SolrQuery query = resolveParams(params);
+//            UpdateResponse updateResponse = cloudSolrServer.deleteByQuery(query.toString());
+            QueryResponse queryResponse = cloudSolrServer.query(query);
+            SolrDocumentList docs = queryResponse.getResults();
+            String temp = "";
+            List<String> ids = new ArrayList<>();
+            for (SolrDocument doc : docs) {
+                temp = (String) doc.getFieldValue("id");
+                ids.add(temp);
+            }
+            UpdateResponse updateResponse = cloudSolrServer.deleteById(ids);
+            cloudSolrServer.commit();
+            log.info("删除数据返回结果：" + updateResponse);
+            return updateResponse.toString();
+        } catch (JSONException e) {
+            log.error("Json解析错误", e);
+            return "{'error':'format error!'}";
+        } catch (Exception e) {
+            log.error("删除数据异常！", e);
+        }
+        return "";
+    }
+
+    /**
+     * 根据条件索引数据，再删除相应的数据
+     */
+    public String deleteDataAndIndex(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        JSONObject jsonObject = null;
+        try {
+            jsonObject = JSON.parseObject(paramsJson);
+            String collectionName = jsonObject.getString("collectionName").replace(" ", "");
+            if (StringUtils.isBlank(collectionName)) {
+                return "{'error':'collectionName is null'}";
+            }
+            if (!CollectionEnum.checkCollecionIsExist(collectionName)) {
+                return "{'error':'The collectionName of " + collectionName + " is not exist!'}";
+            }
+            JSONArray params = jsonObject.getJSONArray("params");
+            if (params == null || params.size() == 0) {
+                return "{'error':'params is null'}";
+            }
+            // 默认一次性删除10000条数据
+            Integer number = jsonObject.getInteger("number");
+            if (number == null) {
+                number = 10000;
+            }
+            long count = countByCondition(paramsJson);
+            if (count == 0) {
+                return "{'info':'data that meets the query requirements is null'}";
+            }
+            cloudSolrServer.setDefaultCollection(collectionName);
+            int start = 0;
+            AtomicLong total = new AtomicLong();
+            while (count > 0) {
+                SolrQuery query = resolveParams(params);
+                query.setStart(start);
+                // 默认一次性删除10000条数据
+                if (count <= number) {
+                    query.setRows((int)count);
+                    total.getAndAdd(count);
+                } else {
+                    query.setRows(number);
+                    total.getAndAdd(number);
+                }
+                QueryResponse queryResponse = cloudSolrServer.query(query);
+                SolrDocumentList docs = queryResponse.getResults();
+                String temp = "";
+                List<String> rowkeyList = new ArrayList<>();
+                for (SolrDocument doc : docs) {
+                    temp = (String) doc.getFieldValue("id");
+                    rowkeyList.add(temp);
+                }
+                HbaseUtils.deleteByRowkey(tableName, rowkeyList);
+//                start += number;
+                count -= number;
+            }
+            log.info("数据删除成功，删除数据条数：" + total.get());
+            return "{'rows':" + total.get() + "}";
+        } catch (JSONException e) {
+            log.error("Json解析错误", e);
+            return "{'format error':"+JSONObject.toJSONString(e.getMessage())+"}";
+        } catch (Exception e) {
+            log.error("删除数据异常！", e);
+            return "{'error':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        }
+    }
+
+    /**
+     * @param paramsJson 更新需要把所有数据stored，这样子简单、省时、并且减少网络开销，但是耗费空间。以空间换时间
+     *                   All the fields of our document are marked as stored=”true”.
+     *                   We need that in order to update single fields of those documents.
+     *                   Solr uses stored fields to get data from them and than uses this data
+     *                   to reconstruct the document that will be removed and indexed again.
+     *                   Of course the newly indexed document will have the changes we told Solr we want.
+     *                   We gain simplicity, time and networks usage, but we need sacrifice the index size because of that.
+     */
+    @Deprecated
+    public String updateIndex(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        JSONObject jsonObject = JSON.parseObject(paramsJson);
+        String collectionName = jsonObject.getString("collectionName");
+        cloudSolrServer.setDefaultCollection(collectionName);
+        JSONArray paramsArray = jsonObject.getJSONArray("params");
+        SolrQuery solrQuery = resolveParams(paramsArray);
+
+        UpdateRequest updateRequest = new UpdateRequest();
+        updateRequest.setAction(UpdateRequest.ACTION.COMMIT, false, false);
+
+        SolrInputDocument solrInputDocument = new SolrInputDocument();
+        solrInputDocument.addField("id", "002");
+        solrInputDocument.addField("name", "Rahman");
+        solrInputDocument.addField("age", "27");
+        solrInputDocument.addField("addr", "hyderabad");
+
+        updateRequest.add(solrInputDocument);
+        try {
+            UpdateResponse rsp = updateRequest.process(cloudSolrServer);
+            cloudSolrServer.commit();
+        } catch (SolrServerException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     * 根据检索条件检索到rowkey，再根据rowkey以及updateValue的内容对hbase中的数据进行更新；
+     *
+     * @param paramsJson
+     * @return
+     */
+    public String updateDataAndIndex(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        JSONObject jsonObject = null;
+        try {
+            jsonObject = JSON.parseObject(paramsJson);
+            String collectionName = jsonObject.getString("collectionName").replace(" ", "");
+            if (StringUtils.isBlank(collectionName)) {
+                return "{'error':'collectionName is null'}";
+            }
+            if (!CollectionEnum.checkCollecionIsExist(collectionName)) {
+                return "{'error':'The collectionName of " + collectionName + " is not exist!'}";
+            }
+            JSONArray params = jsonObject.getJSONArray("params");
+            if (params == null || params.size() == 0) {
+                return "{'error':'params is null'}";
+            }
+            // 默认一次性修改10000条数据
+            Integer number = jsonObject.getInteger("number");
+            if (number == null) {
+                number = 10000;
+            }
+            long count = countByCondition(paramsJson);
+            if (count == 0) {
+                return "{'info':'data that meets the query requirements is null'}";
+            }
+            cloudSolrServer.setDefaultCollection(collectionName);
+            int start = 0;
+            AtomicLong total = new AtomicLong();
+            while (count > 0) {
+                SolrQuery query = resolveParams(params);
+                query.setStart(start);
+                // 默认一次性修改10000条数据
+                if (count <= number) {
+                    query.setRows((int)count);
+                    total.getAndAdd(count);
+                } else {
+                    query.setRows(number);
+                    total.getAndAdd(number);
+                }
+                QueryResponse queryResponse = cloudSolrServer.query(query);
+                SolrDocumentList docs = queryResponse.getResults();
+                String temp = "";
+                List<String> rowkeyList = new ArrayList<>();
+                for (SolrDocument doc : docs) {
+                    temp = (String) doc.getFieldValue("id");
+                    rowkeyList.add(temp);
+                }
+                JSONObject tobj = (JSONObject) jsonObject.get("updateValue");
+                if (tobj == null) {
+                    return "{'error':'updateValue is null'}";
+                }
+                List<String> columnList = new ArrayList<>();
+                List<String> valueList = new ArrayList<>();
+                FastJsonUtils.objectAnalysis("", tobj, columnList, valueList);
+                List<Put> putList = new ArrayList<>();
+                for (String rowkey : rowkeyList) {
+                    Put put = new Put(rowkey.getBytes());
+                    for (int i = 0; i < columnList.size(); i++) {
+                        put.addColumn(CollectionEnum.getHBaseColumnFamilyNameByCollectionName(collectionName).getBytes(), columnList.get(i).getBytes(),
+                                valueList.get(i).getBytes());
+                    }
+                    putList.add(put);
+                }
+                HbaseUtils.put(tableName, putList);
+                start++;
+                count -= number;
+            }
+//            SolrQuery solrQuery = resolveParams(params);
+//            QueryResponse queryResponse = cloudSolrServer.query(solrQuery);
+//            SolrDocumentList docs = queryResponse.getResults();
+//            String temp = "";
+//            List<String> rowkeyList = new ArrayList<>();
+//            for (SolrDocument doc : docs) {
+//                temp = (String) doc.getFieldValue("id");
+//                rowkeyList.add(temp);
+//            }
+//            JSONObject tobj = (JSONObject) jsonObject.get("updateValue");
+//            if (tobj == null) {
+//                return "{'error':'updateValue is null'}";
+//            }
+//            List<String> columnList = new ArrayList<>();
+//            List<String> valueList = new ArrayList<>();
+//            FastJsonUtils.objectAnalysis("", tobj, columnList, valueList);
+//            List<Put> putList = new ArrayList<>();
+//            for (String rowkey : rowkeyList) {
+//                Put put = new Put(rowkey.getBytes());
+//                for (int i = 0; i < columnList.size(); i++) {
+//                    put.addColumn(CollectionEnum.getHBaseColumnFamilyNameByCollectionName(collectionName).getBytes(), columnList.get(i).getBytes(),
+//                            valueList.get(i).getBytes());
+//                }
+//                putList.add(put);
+//            }
+//            HbaseUtils.put(tableName, putList);
+            log.info("数据修改成功，修改数据条数：" + total.get());
+            return "{'rows':" + total.get() + "}";
+        } catch (JSONException e) {
+            log.error("Json解析错误", e);
+            return "{'FormatError':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        } catch (Exception e) {
+            log.error("数据修改异常", e);
+            return "{'error':" + JSONObject.toJSONString(e.getMessage()) + "}";
+        }
+    }
+
+    /**
+     * 统计满足查询条件的数据条数
+     *
+     * @param paramsJson
+     * @return
+     */
+    @Override
+    public Long countByCondition(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return 0L;
+        }
+        JSONObject jsonObject = null;
+        try {
+            jsonObject = JSON.parseObject(paramsJson);
+            String collectionName = jsonObject.getString("collectionName").replace(" ", "");
+            if (StringUtils.isBlank(collectionName)) {
+                throw new RuntimeException("CollectionName is null!");
+            }
+            if (!CollectionEnum.checkCollecionIsExist(collectionName)) {
+                throw new RuntimeException("The collectionName of " + collectionName + " is not exist!");
+            }
+            JSONArray paramsArray = jsonObject.getJSONArray("params");
+            if (paramsArray == null || paramsArray.size() == 0) {
+                throw new RuntimeException("params is null！");
+            }
+
+            cloudSolrServer.setDefaultCollection(collectionName);
+            SolrQuery solrQuery = resolveParams(paramsArray);
+            QueryResponse queryResponse = cloudSolrServer.query(solrQuery);
+            final long numFound = queryResponse.getResults().getNumFound();
+            log.info("数据条数：" + numFound);
+            return numFound;
+        } catch (Exception e) {
+            log.error("统计查询异常！", e);
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
+    public Long count(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return 0L;
+        }
+        final JSONObject jsonObject = JSON.parseObject(paramsJson);
+        try {
+            final Integer objType = jsonObject.getIntValue("objType");
+            final Integer bucketNum = jsonObject.getIntValue("bucketNum");
+            final JSONArray bucketList = jsonObject.getJSONArray("bucketList");
+            if (objType == null || bucketNum == null || bucketList == null) {
+                throw new RuntimeException("{'Error':'Parameter is not entire!'}");
+            }
+            SolrQuery query = null;
+            final ObjType type = ObjType.getByType(objType);
+            cloudSolrServer.setDefaultCollection(type.getTypeName());
+            AtomicLong total = new AtomicLong();
+            for (int i = 0; i < bucketNum && i < bucketList.size(); i++) {
+                query = new SolrQuery();
+                query.setQuery("bucketId:" + bucketList.getInteger(i));
+//                query.setQuery("*:*");
+                QueryResponse queryResponse = cloudSolrServer.query(query);
+                final long numFound = queryResponse.getResults().getNumFound();
+                log.info("dd" + numFound);
+                total.getAndAdd(numFound);
+            }
+            return total.get();
+        } catch (Exception e) {
+            log.error("统计查询异常！", e);
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
+    public String imageSearchData(String paramsJson) {
+        if (StringUtils.isBlank(paramsJson)) {
+            return "{'error':'parameters is empty!'}";
+        }
+        final JSONObject jsonObject = JSON.parseObject(paramsJson);
+        try {
+            final Integer objType = jsonObject.getIntValue("objType");
+            final Integer bucketNum = jsonObject.getIntValue("bucketNum");
+            final JSONArray bucketList = jsonObject.getJSONArray("bucketList");
+            if (objType == null || bucketNum == null || bucketList == null) {
+                throw new RuntimeException("{'Error':'Parameter is not entire!'}");
+            }
+            Integer start = jsonObject.getIntValue("start");
+            Integer rows = jsonObject.getIntValue("rows");
+            if (start == null) {
+                start = 0;
+            }
+            if (rows == null) {
+                rows = 10;
+            }
+            final ObjType type = ObjType.getByType(objType);
+            cloudSolrServer.setDefaultCollection(type.getTypeName());
+            SolrQuery query = null;
+            JSONArray resultArray = new JSONArray();
+            for (int i = 0; i < bucketNum && i < bucketList.size(); i++) {
+                query = new SolrQuery();
+                query.setQuery("bucketId:" + bucketList.getInteger(i));
+//                query.setQuery("*:*");
+                query.setStart(start);
+                query.setRows(rows);
+                QueryResponse queryResponse = cloudSolrServer.query(query);
+                final SolrDocumentList results = queryResponse.getResults();
+                resultArray.addAll(results);
+            }
+            return resultArray.toJSONString();
+        } catch (Exception e) {
+            log.error("统计查询异常！", e);
+            return "{'Error':'" + e.getMessage() + "'}";
+        }
+    }
+
+    private SolrQuery resolveParams(JSONArray paramsArray) {
+        SolrQuery query = new SolrQuery();
+        //具体请查询solr q与fq的区别
+        query.set("q", "*:*");
+        StringBuffer fqBuffer = new StringBuffer();
+        Iterator<Object> iterator = paramsArray.iterator();
+        while (iterator.hasNext()) {
+            JSONObject object = (JSONObject) iterator.next();
+            if (StringUtils.isBlank(object.getString("type"))) {
+                //默认EQ
+                query.setQuery(object.getString("field") + ":" + object.getJSONArray("value").get(0));
+            } else {
+                String type = object.getString("type");
+                final ConditionType conditionType = ConditionType.getEnum(type);
+                String key = object.getString("field");
+                JSONArray valueArray = object.getJSONArray("value");
+                switch (conditionType) {
+                    case EQ:
+                        fqBuffer.append(" && " + key + ":" + valueArray.get(0));
+                        break;
+                    case NOT_EQ:
+                        fqBuffer.append(" && " + "-" + key + ":" + valueArray.get(0));
+                        break;
+                    case LESS:
+                        fqBuffer.append(" && " + key + ":{* TO " + valueArray.get(0) + "}");
+                        break;
+                    case LESS_EQ:
+                        fqBuffer.append(" && " + key + ":[* TO " + valueArray.get(0) + "]");
+                        break;
+                    case MORE:
+                        fqBuffer.append(" && " + key + ":{" + valueArray.get(0) + " TO *}");
+                        break;
+                    case MORE_EQ:
+                        fqBuffer.append(" && " + key + ":[" + valueArray.get(0) + " TO *]");
+                        break;
+                    case LIKE:
+                        fqBuffer.append(" && " + key + ":*" + valueArray.get(0) + "*");
+                        break;
+                    case IN:
+                        Iterator<Object> valueIterator = valueArray.iterator();
+                        StringBuffer sb = new StringBuffer();
+                        while (valueIterator.hasNext()) {
+                            sb.append(valueIterator.next() + " ");
+                        }
+                        fqBuffer.append(" && " + key + ":(" + sb.toString() + ")");
+                        break;
+                    case BETWEEN_AND:
+                        fqBuffer.append(" && " + key + ":[" + valueArray.get(0) + " TO " + valueArray.get(1) + "]");
+                        break;
+                    case ISNULL:
+                        fqBuffer.append(" && " + "-" + key + ":['' TO *]");
+                        break;
+                    case ISNOTNULL:
+                        fqBuffer.append(" && " + key + ":['' TO *]");
+                        break;
+                }
+            }
+        }
+        String fq = fqBuffer.toString();
+        fq = fq.substring(fq.indexOf("&&") + 3);
+        log.info("查询参数：" + fq);
+        query.addFilterQuery(fq);
+        return query;
+    }
+
+    private void setQueryParams(SolrQuery query) {
+        query.setFields("id", "title", "content", "releaseDate");
+        query.setRows(20).setStart(0);
+        query.setHighlight(true).setHighlightFragsize(200)
+                .setHighlightSimplePre("<span font='red'>").setHighlightSimplePost("</span>")
+                .set("hl.fl", "title,content");
+    }
+
+    private void output(QueryResponse result) {
+        SolrDocumentList list = result.getResults();
+        Map<String, Map<String, List<String>>> hlMap = result.getHighlighting();
+        for (SolrDocument doc : list) {
+            output(doc, hlMap);
+        }
+    }
+
+    private void output(SolrDocument doc, Map<String, Map<String, List<String>>> hlMap) {
+        String id = (String) doc.getFieldValue("id");
+        String title = (String) doc.getFieldValue("title");
+        String content = (String) doc.getFieldValue("content");
+        if (hlMap != null) {
+            Map<String, List<String>> docHl = hlMap.get(id);
+            if (docHl != null) {
+                title = getHlValue(docHl, "title");
+                content = getHlValue(docHl, "content");
+            }
+        }
+        System.out.print("id:" + id);
+        System.out.print("\ttitle:" + title);
+        System.out.print("\tcontent:" + content);
+        //System.out.println("\tdate:" + DateUtils.formatDate((Date) doc.getFieldValue("releaseDate"), "yyyy-MM-dd HH:mm"));
+    }
+
+    private String getHlValue(Map<String, List<String>> docHl, String field) {
+        return docHl.containsKey(field) ? docHl.get(field).get(0) : null;
+    }
+}

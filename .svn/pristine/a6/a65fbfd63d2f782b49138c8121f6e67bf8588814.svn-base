@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/bigdata-insertdata/bigdata-insertdata.iml" filepath="$PROJECT_DIR$/bigdata-insertdata/bigdata-insertdata.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/bigdata-parent.iml" filepath="$PROJECT_DIR$/.idea/bigdata-parent.iml" />
+      <module fileurl="file://$PROJECT_DIR$/bigdata-search-images/bigdata-search-images.iml" filepath="$PROJECT_DIR$/bigdata-search-images/bigdata-search-images.iml" />
+      <module fileurl="file://$PROJECT_DIR$/bigdata-solr/bigdata-solr.iml" filepath="$PROJECT_DIR$/bigdata-solr/bigdata-solr.iml" />
+    </modules>
+  </component>
+</project>

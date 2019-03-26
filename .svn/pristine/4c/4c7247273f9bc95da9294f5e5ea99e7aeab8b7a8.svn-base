@@ -1,0 +1,152 @@
+package Api.work
+
+import java.sql.{Connection, DriverManager, PreparedStatement}
+
+import Api.entity.QueryEntity
+import Api.utils._
+import com.alibaba.fastjson.{JSON, JSONObject}
+import kafka.serializer.StringDecoder
+import org.apache.spark.streaming.dstream.{DStream, InputDStream}
+import org.apache.spark.streaming.kafka.KafkaUtils
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.mutable.ArrayBuffer
+import scalaj.http.Http
+
+/**
+  * 不调用连接池,使用原始方法插入数据
+  * Created by liuxiang on 2018/12/10.
+  */
+object ConsumerWork {
+  def main(args: Array[String]): Unit = {
+    //创建sparkConf
+    val sparkConf: SparkConf = new SparkConf()
+      .setAppName("ConsumerWork")
+    //创建sparkContext
+    val sc = new SparkContext(sparkConf)
+    sc.setLogLevel("WARN")
+    //获取读取配置文件工具类
+    val prop = PropertiesReaderUtils.getProperties("conf/path.properties")
+    //读取配置文件
+    //窗口大小
+    val window = prop.getProperty("picture.window").toInt
+    //划分数
+    val split = prop.getProperty("picture.split").toInt
+    //ip地址
+    val ip = prop.getProperty("picture.ip")
+    //取得TopK
+    val top = prop.getProperty("picture.top").toInt
+    //mysql插入语句
+    val query = prop.getProperty("picture.query")
+    //mysql配置
+    val url = prop.getProperty("url")
+    val userName = prop.getProperty("userName")
+    val password = prop.getProperty("password")
+    //创建StreamingContext
+    val ssc = new StreamingContext(sc, Seconds(window))
+    //配置kafka相关参数
+    val kafkaParams = Map("metadata.broker.list" -> prop.getProperty("metadata.broker.list"))
+    //定义topic
+    val topics = Set(prop.getProperty("topic.picture"))
+    //通过 KafkaUtils.createDirectStream接受kafka数据，这里采用是kafka低级api偏移量不受zk管理
+    val dstream: InputDStream[(String, String)] = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](ssc, kafkaParams, topics)
+    //获取kafka中topic中的数据
+    val topicData: DStream[String] = dstream.map(_._2)
+
+    //解析json并获取solr条数
+    val readJson = topicData.map(t => {
+      //查询solr中符合查询条件的数据条数
+      val result = Http(ip + "count")
+        .postForm.param("paramsJson", t)
+        .asString
+        .body
+
+      //接口参数需要根据条件重新定义
+      val lines: Int = result.toString.toInt
+      //将json和数据条数传入下一个transformation
+      (t, lines)
+    })
+
+    //将lines分割成多份
+    val splitJson = readJson.flatMap(t => {
+      val json = t._1
+      val lines = t._2
+      val foot = lines / split + 1
+      for (i <- Range(0, lines + 1, foot)) yield (json, i, foot)
+    })
+
+    //调用Solr查询接口并进行比对，计算余弦相似度
+    val cosDist = splitJson.map(t => {
+      //分离数据
+      val jsonData = t._1
+      val startLine = t._2
+      val foot = t._3
+
+      //解析json
+      val json = JSON.parseObject(jsonData)
+      val keyId = json.getString("keyId")
+      val feature = json.getString("feature")
+      val objType: Int = json.getIntValue("objType")
+      json.put("start", startLine)
+      json.put("rows", foot)
+
+      //查询solr
+      val result = Http(ip + "imageSearchData")
+        .postForm.param("paramsJson", json.toString)
+        .asString
+        .body
+
+      //解析查询结果
+      val resultJson = JSON.parseArray(result.toString)
+
+      //接口参数需要根据条件重新定义
+      val targetFeatures = ArrayBuffer[QueryEntity]()
+      for (i <- 0 to resultJson.size() - 1) {
+        var obj:JSONObject = resultJson.getJSONObject(i)
+        val ii = obj.getString("id")
+        val ff = obj.getString("features_featureData")
+        targetFeatures.append(new QueryEntity(ii, ff))
+      }
+
+      //计算余弦相似度
+      val featureDist = targetFeatures.map(m => {
+        val id = m.getId
+        val targetFeature = m.getFeature
+        val cosinDist:Double = CompareFeatureUtils.compare(objType, targetFeature, feature)
+        (id, cosinDist)
+      })
+
+      //返回请求标识和计算后的余弦相似度
+      (keyId, featureDist)
+    })
+
+    //对余弦距离进行扁平化处理
+    val flatDist = cosDist.flatMap(m => {
+      for (i <- 0 until m._2.length) yield (m._1, m._2(i))
+    })
+
+    //对距离由大到小进行排序并取出top10
+    val sortedDist = flatDist.foreachRDD(rdd => {
+      val conn: Connection = DriverManager.getConnection(url, userName, password)
+      var ps: PreparedStatement = conn.prepareStatement(query)
+      val orderedRdd = rdd.top(top)(Ordering.by(e => e._2._2))
+      if(orderedRdd.length > 0) {
+        //插入数据
+        orderedRdd.foreach(record => {
+          ps.setString(1, record._1)
+          ps.setString(2, record._2._1)
+          ps.setDouble(3, record._2._2.toDouble)
+          ps.execute()
+        })
+
+        ps.close()
+        conn.close()
+      }
+    })
+
+    //开启计算
+    ssc.start()
+    ssc.awaitTermination()
+  }
+}

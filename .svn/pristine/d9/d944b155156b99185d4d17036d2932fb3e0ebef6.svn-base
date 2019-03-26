@@ -1,0 +1,14 @@
+package com.qst.test;
+
+import com.qst.assistant.StructuredDataService;
+
+public class RandomDataTest {
+
+    public static void main(String[] args) {
+        StructuredDataService sds = new StructuredDataService();
+        String line = sds.generateJsonData();
+        System.out.println(line);
+        System.out.println("success");
+    }
+
+}

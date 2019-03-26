@@ -1,0 +1,83 @@
+package Demo
+
+import NewTest.utils.{DemoUtils, PropertiesReaderUtils}
+import cn.jiuling.jni.QstCompareFeatureApiTest
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.JavaConversions._
+import scala.collection.mutable
+
+/**
+  * Created by liuxiang on 2018/12/11.
+  */
+object CalculateInClusterDemo {
+  def main(args: Array[String]): Unit = {
+    //创建sparkConf
+    val sparkConf: SparkConf = new SparkConf()
+      .setAppName("CalculateInClusterDemo")
+//      .setMaster("local[10]")
+    //创建sparkContext
+    val sc = new SparkContext(sparkConf)
+    sc.setLogLevel("WARN")
+
+    val start = System.currentTimeMillis()
+    val prop = PropertiesReaderUtils.getProperties("/conf/path.properties")
+    //加载sdk
+    System.load(prop.getProperty("qst.sdk1"))
+    System.load(prop.getProperty("qst.sdk2"))
+    var arry = Array(
+      "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"
+    )
+    val data = sc.parallelize(arry)
+
+    //将查询数据分割为50份
+    val splitData = data.flatMap(x => {
+      val sourceFeature = x
+      //设置查询的起始点和终止点
+      val lines = 131434321
+      val foot = lines / 50 + 1
+      for (i <- 1 until lines by foot) yield {
+        val start = i
+//        println("start" + start)
+        val end = start + foot - 1
+//        println("end" + end)
+        (sourceFeature)
+      }
+    })
+
+    val solrFeatures = splitData.map(t => {
+      //查询所得的数据数组
+      val targetFeatures:mutable.Buffer[String] = DemoUtils.combinationQuery(1, 2, "")
+      (t, targetFeatures)
+    })
+
+    val cosDist = solrFeatures.map(u => {
+      val sourceFeature = u._1
+      val targetFeatures = u._2
+      //对数组进行遍历计算cosin值
+      val featureDist = targetFeatures.map(feature => {
+        //加载sdk
+        //        System.load(prop.getProperty("qst.sdk1"))
+        //        System.load(prop.getProperty("qst.sdk2"))
+        val temp = QstCompareFeatureApiTest.main(feature, sourceFeature)
+        //        val temp = 0.01
+        println("tempCos:" + temp)
+        temp
+      })
+      (sourceFeature, featureDist)
+    })
+
+    //对余弦距离进行扁平化处理
+    val flatDist = cosDist.flatMap(m => {
+      for (i <- 0 until m._2.length) yield (m._1, m._2(i))
+    })
+
+    //对距离由大到小进行排序并取出top10
+    val sortedDist = flatDist.top(3)(Ordering.by(e => e._2)).map(record => {
+      println("record1:" + record._1)
+      println("record2:" + record._2)
+    })
+
+    println(System.currentTimeMillis()-start)
+  }
+}

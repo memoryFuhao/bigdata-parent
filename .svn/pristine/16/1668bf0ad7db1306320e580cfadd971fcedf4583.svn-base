@@ -1,0 +1,12 @@
+#broker地址
+bootstrap.servers = master:9092, slave1:9092, slave2:9092, slave3:9092
+#请求时候需要验证
+#acks = all
+#请求失败时候需要重试
+#retries = 0
+#内存缓存区大小
+#buffer.memory = 33554432
+#指定消息key序列化方式
+key.serializer = org.apache.kafka.common.serialization.StringSerializer
+#指定消息本身的序列化方式
+value.serializer = org.apache.kafka.common.serialization.StringSerializer

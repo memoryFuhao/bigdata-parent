@@ -1,0 +1,113 @@
+package com.qst.work
+
+import com.alibaba.fastjson.{JSON, JSONObject}
+import com.qst.utils.{FastJsonUtils, HbaseUtils, PropertiesUtils}
+import kafka.serializer.StringDecoder
+import org.apache.hadoop.hbase.client.Put
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.kafka.KafkaUtils
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.slf4j.LoggerFactory
+
+import scala.collection.mutable
+
+/**
+  * created by hkl
+  */
+
+class KafkaDirectToHbase{}
+
+object KafkaDirectToHbase {
+
+  private val logger = LoggerFactory.getLogger(classOf[KafkaDirectToHbase])
+  val prop = PropertiesUtils.load("conf/configuration.properties")
+
+  def main(args: Array[String]): Unit = {
+
+    println("test start!!!!!!!")
+    val conf = new SparkConf().setAppName("json_test")
+//      .setMaster("local[4]")
+    conf.set("spark.testing.memory", "2147480000") // 后面的值大于512m即可
+    val ssc = new StreamingContext(conf, Seconds(4))
+
+    //get configuration
+    val kafkaParams=Map("metadata.broker.list"->prop.getProperty("broker.list"),"group.id"->prop.getProperty("group"))
+    val topics = Set(prop.getProperty("topics"))
+    val tablename = prop.getProperty("table")
+    val columnFamilys = prop.getProperty("ColumnFamilyName").split(",")
+
+    //原始数据
+    val lines =KafkaUtils.createDirectStream[String,String,StringDecoder,StringDecoder](ssc,kafkaParams,topics).map(_._2)
+
+    // jsonstring -> jsonobject
+    val jsonobjs = lines.flatMap { x =>
+      var buffer = mutable.ArrayBuffer[JSONObject]()
+      //筛选掉不是合格的json字符串的情况
+      //未做：是否要提前判断是否是JSONArray,根据kafka中的一条消息是否包含多个json字符串。
+      if (FastJsonUtils.isLegal(x)){
+        var jsonobject = JSON.parseObject(x)
+        buffer.append(jsonobject)
+      }else{
+        logger.error("jsonString is not correct")
+      }
+      buffer
+    }
+    val words = jsonobjs.persist // 缓存也可以根据实际业务保存,也可以用cache,cache只支持MEMORY_ONLY级别缓存
+
+    //将数据分流
+    val words_1 = words.filter(x => {
+      "1".equals(x.get("objType").toString)
+    })
+    val words_2 = words.filter(x => {
+      "2".equals(x.get("objType").toString)
+    })
+    val words_4 = words.filter(x => {
+      "4".equals(x.get("objType").toString)
+    })
+
+    //insert data whose objtype is 1 to hbase
+    words_1.foreachRDD { x =>
+      var puts = mutable.ArrayBuffer[Put]()
+      val arr = x.collect()
+      for (t <- arr) {
+        var put = FastJsonUtils.dataAnalysis(t, columnFamilys(0))
+        puts.append(put)
+      }
+      if (puts.size > 0) {
+        println("数组大小" + puts.size)
+        HbaseUtils.put(tablename, scala.collection.JavaConversions.bufferAsJavaList(puts))
+      }
+    }
+
+    //insert data whose objtype is 2 to hbase
+    words_2.foreachRDD { x =>
+      var puts = mutable.ArrayBuffer[Put]()
+      val arr = x.collect()
+      for (t <- arr) {
+        var put = FastJsonUtils.dataAnalysis(t, columnFamilys(1))
+        puts.append(put)
+      }
+      if (puts.size > 0) {
+        println("数组大小" + puts.size)
+        HbaseUtils.put(tablename, scala.collection.JavaConversions.bufferAsJavaList(puts))
+      }
+    }
+    //insert data whose objtype is 4 to hbase
+    words_4.foreachRDD { x =>
+      var puts = mutable.ArrayBuffer[Put]()
+      val arr = x.collect()
+      for (t <- arr) {
+        var put = FastJsonUtils.dataAnalysis(t, columnFamilys(2))
+        puts.append(put)
+      }
+      if (puts.size > 0) {
+        println("数组大小" + puts.size)
+        HbaseUtils.put(tablename, scala.collection.JavaConversions.bufferAsJavaList(puts))
+      }
+    }
+
+    ssc.start()
+    ssc.awaitTermination()
+  }
+
+}

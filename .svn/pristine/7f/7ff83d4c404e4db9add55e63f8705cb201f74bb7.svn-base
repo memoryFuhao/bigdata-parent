@@ -1,0 +1,14 @@
+package com.video.bigdata.bigdatasolr;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class BigdataSolrApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(BigdataSolrApplication.class, args);
+	}
+
+}
+

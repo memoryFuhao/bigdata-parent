@@ -1,0 +1,12 @@
+package Api.service;
+
+/**
+ * Created by liuxiang on 2019/1/8.
+ */
+public class FinalService {
+    public static void main(String[] args) throws Exception{
+        KafkaProducerService.produce("", 4, "", "");
+        Thread.sleep(5000);
+        MysqlQueryService.query("", new String[]{});
+    }
+}

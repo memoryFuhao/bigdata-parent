@@ -1,0 +1,35 @@
+#hbase配置
+#主结点IP
+hbase.master=master
+#hbase的zookeeper端口号
+hbase.zookeeper.property.clientPort=2181
+#hbase的zookeeper集群
+hbase.zookeeper.quorum=master
+
+#solr配置
+solr.server=http://slave1:8983/solr/rideCollections
+
+#mysql配置
+driver=com.mysql.jdbc.Driver
+url=jdbc:mysql://115.157.201.164:3306/test?characterEncoding=UTF-8&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&useSSL=false
+userName=root
+password=123
+
+
+#kafka配置
+#metadata.broker.list=master:9092
+metadata.broker.list=master:9092,slave1:9092,slave2:9092,slave3:9092,slave4:9092
+group.id=lx
+topic.picture=test1
+
+#以图搜图配置
+picture.window=1
+picture.split=30
+picture.top=10
+#picture.query=INSERT INTO results (uuid, distance) VALUES (?, ?)
+#picture.query=INSERT INTO results (ack, uuid, url, distance) VALUES (?, ?, ?, ?)
+picture.query=INSERT INTO results (ack, uuid, distance) VALUES (?, ?, ?)
+
+#cos sdk
+qst.sdk1=/home/hadoop/Jar/lx/sdk/libqst_comparefeatures.so
+qst.sdk2=/home/hadoop/Jar/lx/sdk/libqstcomparejniapi.so

@@ -1,0 +1,11 @@
+package cn.jiuling.jni;
+
+import com.sun.jersey.core.util.Base64;
+
+public class QstCompareFeatureApiTest1 {
+    public static double main(String feature1, String feature2) {
+        System.load("D:\\qstSDK\\QST_CompareFeatures.dll");
+        System.load("D:\\qstSDK\\qstcomparejniapi.dll");
+        return QstCompareFeatureExec.compareFeatures(1, Base64.decode(feature1.getBytes()), Base64.decode(feature2.getBytes()));
+    }
+}

@@ -1,0 +1,25 @@
+package Api.service;
+
+
+
+import Api.utils.CombinationQueryUtils;
+
+import java.util.List;
+
+/**
+ * Created by liuxiang on 2018/12/18.
+ */
+public class TestQuery {
+    public static void main(String[] args) throws Exception{
+        String query = args[0];
+        String col = args[1];
+        int start = Integer.parseInt(args[2]);
+        int rows = Integer.parseInt(args[3]);
+        long combinationQuery = CombinationQueryUtils.getDataLines(query);
+        List<String> list = CombinationQueryUtils.combinationQuery(start, rows, query, col);
+        System.out.println(combinationQuery);
+        for (int i = 0; i < list.size(); i++) {
+            System.out.println(list.get(i));
+        }
+    }
+}

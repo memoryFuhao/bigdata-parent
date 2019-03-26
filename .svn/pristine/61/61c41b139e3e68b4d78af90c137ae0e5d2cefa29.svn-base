@@ -1,0 +1,19 @@
+#hbase
+#fs.defaultFS = hdfs://pro-master01:8020/
+hbase.master = master
+hbase.zookeeper.property.clientPort = 2181
+#hbase.zookeeper.quorum = pro-slave07
+hbase.zookeeper.quorum = master
+
+table = video
+ColumnFamilyName = human,vehicle,ride
+
+
+#kafka
+#broker list
+broker.list = master:9092,slave1:9092,slave2:9092,slave3:9092,slave4:9092
+#comsumer group
+group = spark_json_test_group
+#topic
+topics = test2
+

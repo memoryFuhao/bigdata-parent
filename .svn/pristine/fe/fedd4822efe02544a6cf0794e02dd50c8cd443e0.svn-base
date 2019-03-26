@@ -1,0 +1,10 @@
+package cn.jiuling.jni;
+
+public class QstCompareFeatureApi {
+
+    public native byte[] GetCompareFeaturesVersion();
+
+    public native double CompareQueryFeatures(byte[] feaBy1, byte[] feaBy2);
+
+    public native double CompareFaceFeatures(byte[] feaBy1, byte[] feaBy2);
+}

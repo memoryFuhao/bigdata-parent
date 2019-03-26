@@ -1,0 +1,123 @@
+package com.hnu.qst.utils
+
+import net.sf.json.{JSONArray, JSONObject}
+import net.sf.json.util.JSONTokener
+import org.apache.hadoop.hbase.client.Put
+import scala.collection.mutable
+import scala.collection.JavaConverters._
+
+/**
+  * created by hkl
+  * json解析类
+  */
+//没有过滤value为空的情况；
+class JsonUtils {
+
+}
+
+object JsonUtils {
+
+  /**
+    * 判断传入的json字符串是否是数组
+    *
+    * @param jsonStr
+    * @return 是否是数组
+    */
+  def isArray(jsonStr: String): Boolean = {
+    //如果jsonStr为空，则直接返回，否则报Missing value. at character 0 of的异常
+    if (jsonStr.toString.equals("")) return false
+    val obj = new JSONTokener(jsonStr).nextValue()
+    //    if (obj == null) return false
+    if (obj.isInstanceOf[JSONArray]) {
+      return true
+    }
+    else return false
+  }
+
+  /**
+    * 判断传入的json字符串是否是JSONObject
+    *
+    * @param jsonStr
+    * @return 是否是JSONObject
+    */
+  //在这种情况下一定要加return，如果没有return的话程序会执行到最后，
+  def isObject(jsonStr: Object): Boolean = {
+    if (jsonStr.toString.equals("")) return false
+    val obj = new JSONTokener(jsonStr.toString).nextValue()
+    //    if (obj == null) return false
+    if (obj.isInstanceOf[JSONObject]) {
+      return true
+    }
+    else return false
+  }
+
+  /**
+    * 判断jsonStr是否是合法的json字符串。
+    *不是則報 A JSONObject text must begin with '{' at character 0 of 异常
+    *  * @param jsonStr
+    * @return
+    */
+  def isLegal(jsonStr: String): Boolean = {
+    try {
+      var jsonobject = JSONObject.fromObject(jsonStr)
+      return true
+    } catch {
+      case e: java.lang.Exception => return false
+    }
+
+  }
+
+  /**
+    * 对多级json数据进行拼接
+    *
+    * @param key
+    * @param value
+    * @param map
+    */
+  def objectAnalysis(key: String, value: JSONObject, map: mutable.HashMap[String, String]): Unit = {
+    var keys = value.keys().asScala
+    for (k <- keys) {
+      val jsonValue = value.get(k)
+      if (isObject(jsonValue)) {
+        var objtmp = JSONObject.fromObject(jsonValue.toString)
+        objectAnalysis((key + "_" + k), objtmp, map)
+      } else {
+        map += ((key + "_" + k) -> jsonValue.toString)
+      }
+    }
+  }
+
+  /**
+    * 解析json数据
+    *
+    * @param jsonObj
+    * @return
+    */
+  def dataAnalysis(jsonObj: JSONObject, family :String): Put = {
+    var put = new Put(jsonObj.getString("uuid").getBytes)
+    //    println("uuid" + ":" + jsonObj.getString("uuid"))
+    var keys = jsonObj.keys().asScala
+    for (key <- keys) {
+      key.asInstanceOf[String]
+      if (!key.equals("uuid")) {
+        val jsonValue = jsonObj.get(key)
+        if (isObject(jsonValue)) {
+          var map = new mutable.HashMap[String, String]()
+          var objtmp = JSONObject.fromObject(jsonValue.toString)
+          objectAnalysis(key.toString, objtmp, map)
+          for ((k, v) <- map) {
+            put.addColumn(family.getBytes, k.getBytes, v.getBytes)
+            //                println(k + ":"+ v)
+          }
+        } else {
+          put.addColumn(family.getBytes, key.toString.getBytes, jsonValue.toString.getBytes)
+          //              println(key + ":"+ jsonValue.toString)
+        }
+      }
+    }
+    put
+    //    null
+  }
+
+
+}

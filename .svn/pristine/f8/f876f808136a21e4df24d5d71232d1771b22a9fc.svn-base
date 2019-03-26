@@ -1,0 +1,10 @@
+package backup;
+
+import Api.utils.CompareFeatureJava;
+import com.sun.jersey.core.util.Base64;
+
+public class QstCompareFeatureJavaUtils {
+    public static double compare(String feature1, String feature2) {
+        return CompareFeatureJava.compareFeatures(4, Base64.decode(feature1.getBytes()), Base64.decode(feature2.getBytes()));
+    }
+}

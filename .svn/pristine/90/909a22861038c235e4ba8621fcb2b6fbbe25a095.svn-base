@@ -1,0 +1,15 @@
+package com.qst.test
+
+import com.hnu.qst.utils.JsonUtils
+import net.sf.json.JSONObject
+
+
+object JsonTest {
+
+  def main(args: Array[String]): Unit = {
+    val str = "{\"uuid\":\"b67f36cfa852423aa4f16bb6be3e8091\",\"objType\":1,\"objId\":8780,\"serialNumber\":\"1013451453\",\"bigImgURL\":\"http://127.0.0.1:8082/20180816/23/bg/human_1013451453-008780_st1534433796050_end1534433811800.jpg\",\"imgURL\":\"http://127.0.0.1:8082/20180816/23/thumb/human_1013451453-008780_st1534433796050_end1534433811800_thumb.jpg\",\"startFrameIdx\":1027060,\"endFrameIdx\":1027375,\"startFramePts\":1534433796050,\"endFramePts\":1534433811800,\"createTime\":\"2018-08-16 23:37:00\",\"firstObj\":0,\"snapshot\":{\"frameIdx\":1027350,\"width\":1280,\"height\":720,\"boundingBox\":{\"x\":740,\"y\":54,\"w\":116,\"h\":298}},\"upperClothing\":524288,\"lowerClothing\":1048576,\"features\":{\"faceBoundingBox\":{\"x\":0,\"y\":0,\"h\":0,\"w\":0},\"faceUrl\":\"\",\"coatStyle\":{\"code\":2,\"value\":\"短袖\"},\"trousersStyle\":{\"code\":1,\"value\":\"长裤\"},\"respirator\":0,\"coatTexture\":1,\"cap\":0,\"hairStyle\":2,\"trousersTexture\":1,\"coatColor1\":{\"code\":\"16777215\",\"value\":\"白\"},\"coatColor2\":{\"code\":\"-1\",\"value\":\"\"},\"trousersColor1\":{\"code\":\"16777215\",\"value\":\"白\"},\"trousersColor2\":{\"code\":\"-1\",\"value\":\"\"},\"sex\":2,\"age\":-1,\"angle\":128,\"bag\":0,\"carryBag\":0,\"glasses\":0,\"umbrella\":0,\"featureType\":0,\"featureData\":\"SkxUQggAAAAYNwAAAQAAAG3RdFsAAAAAAAEAACIBAAB22GFDZQEAAPRqRrGFWq8N6HOM0w0aKyOXw83lN4/00bEwlDsWqlXUnS8KriX6XiDpBtisPQjxMGvG61YfdSiJ3oEJIyCOMUvv6uoRlvYbdr+nm2rD7ks1LSHFVY8PAxTnEDnqFpxVKrTzcdDER+gX2WMOZ1v0xbe29ByYzjhiityyQ/Ks8WPCOt4Uh2jd8s4DdDI+AZTbvsNJV0mMbujnRl4IG1fccbUZIjb1HCKS8yLNbCX77dfAxuKIR8m72UdbYZBelmmwSLm97aTicfN/5uQbZ/jUKm/R+pKwnwDS7l2hGj/eZUM2EQ0VPdusOk/squPg82raNTP3oL5+tcEoFDVS/iqpkRw=\"}}"
+    var jsonobject = JSONObject.fromObject(str)
+    JsonUtils.dataAnalysis(jsonobject, "human")
+
+  }
+}

@@ -1,0 +1,16 @@
+package Api.service;
+
+import Api.utils.JdbcOperateUtils;
+
+import java.util.List;
+
+/**
+ * Created by liuxiang on 2018/12/18.
+ */
+public class MysqlQueryService {
+    public static void main(String[] args) throws Exception{
+        String query = "SELECT uuid from results WHERE ack = ?";
+        String[] object = {"lxtest3"};
+        List<String> result = JdbcOperateUtils.singleQuery(query, object);
+    }
+}

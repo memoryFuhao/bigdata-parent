@@ -1,0 +1,30 @@
+package cn.jiuling.jni;
+
+public class QstCompareFeatureExec {
+
+    private static QstCompareFeatureApi api = new QstCompareFeatureApi();
+
+    private QstCompareFeatureExec()
+    {
+        super();
+    }
+
+    public static String getCompareFeaturesVersion()
+    {
+        byte[] by = api.GetCompareFeaturesVersion();
+        return new String(by);
+    }
+
+    public static double compareFeatures(int type, byte[] feature1, byte[] feature2)
+    {
+        if (type == 3)
+        {
+            // 人脸特征比对
+            return api.CompareFaceFeatures(feature1, feature2);
+        }
+        else
+        {
+            return api.CompareQueryFeatures(feature1, feature2);
+        }
+    }
+}

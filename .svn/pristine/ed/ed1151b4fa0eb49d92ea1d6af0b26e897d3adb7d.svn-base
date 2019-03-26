@@ -1,0 +1,150 @@
+package com.video.bigdata.bigdatasolr.utils;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.hbase.client.Put;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+
+/**
+ * created by hkl
+ */
+
+public class FastJsonUtils {
+
+    private static Logger logger = LoggerFactory.getLogger(FastJsonUtils.class);
+
+    public static boolean isArray(String jsonStr) {
+        if (StringUtils.isBlank(jsonStr)) return false;
+        try {
+            Object obj = JSONObject.parse(jsonStr);
+            if (obj instanceof JSONArray) {
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return false;
+    }
+
+    public static boolean isObject(String jsonStr) {
+        if (StringUtils.isBlank(jsonStr)) return false;
+        try {
+            Object obj = JSONObject.parse(jsonStr);
+            if (obj instanceof JSONObject) {
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return false;
+    }
+
+    /**
+     * 判断json字符串是否合法
+     *
+     * @param jsonStr
+     * @return
+     */
+    public static boolean isLegal(String jsonStr) {
+        try {
+            Object obj = JSON.parse(jsonStr);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 将JSON对象的内容以键值对的形式放入map
+     *
+     * @param key
+     * @param obj
+     * @param map
+     */
+    public static void objectAnalysis(String key, JSONObject obj, Map<String, String> map) {
+        Set<String> set = obj.keySet();
+        Iterator<String> iter = set.iterator();
+        while (iter.hasNext()) {
+            String k = iter.next();
+            Object jsonValue = obj.get(k);
+            if (isObject(jsonValue.toString())) {
+                JSONObject objtmp = obj.parseObject(jsonValue.toString());
+                objectAnalysis((StringUtils.isBlank(key) ? k : (key + "_" + k)), objtmp, map);
+            } else if (jsonValue == null) {
+                continue;
+            } else {
+                map.put((StringUtils.isBlank(key) ? k : (key + "_" + k)), jsonValue.toString());
+            }
+        }
+    }
+
+    /**
+     * 将JSON对象的键和值分别放入columnList和valueList
+     *
+     * @param key
+     * @param obj
+     * @param columnList
+     * @param valueList
+     */
+    public static void objectAnalysis(String key, JSONObject obj, List<String> columnList, List<String> valueList) {
+        Set<String> set = obj.keySet();
+        Iterator<String> iter = set.iterator();
+        while (iter.hasNext()) {
+            String k = iter.next();
+            Object jsonValue = obj.get(k);
+            if (isObject(jsonValue.toString())) {
+                JSONObject objtmp = obj.parseObject(jsonValue.toString());
+                objectAnalysis((StringUtils.isBlank(key) ? k : (key + "_" + k)), objtmp, columnList, valueList);
+            } else if (jsonValue == null) {
+                continue;
+            } else {
+                columnList.add((StringUtils.isBlank(key) ? k : (key + "_" + k)));
+                valueList.add(jsonValue.toString());
+            }
+        }
+    }
+
+    /**
+     * 将json对象转成Put对象
+     *
+     * @param jsonObj
+     * @param family
+     * @return
+     */
+    public static Put dataAnalysis(JSONObject jsonObj, String family) {
+        Put put = null;
+        try {
+            put = new Put(jsonObj.get("uuid").toString().getBytes());
+        } catch (Exception e) {
+            logger.error("uuid不能为空", e);
+        }
+        Set<String> set = jsonObj.keySet();
+        Iterator<String> iter = set.iterator();
+        while (iter.hasNext()) {
+            String key = iter.next();
+            if (!key.equals("uuid")) {
+                Object jsonValue = jsonObj.get(key);
+                if (isObject(jsonValue.toString())) {
+                    Map map = new HashMap<String, String>();
+                    JSONObject obj = jsonObj.parseObject(jsonValue.toString());
+                    objectAnalysis(key, obj, map);
+                    Set<Map.Entry<String, String>> entries = map.entrySet();
+                    for (Map.Entry<String, String> entry : entries) {
+                        put.addColumn(family.getBytes(), entry.getKey().getBytes(), entry.getValue().getBytes());
+                    }
+                } else if (jsonValue == null) {
+                    continue;
+                } else {
+                    put.addColumn(family.getBytes(), key.getBytes(), jsonValue.toString().getBytes());
+                }
+            }
+        }
+        return put;
+    }
+
+}

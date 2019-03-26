@@ -1,0 +1,100 @@
+package com.qst.utils;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.hbase.client.Put;
+
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * created by hkl
+ */
+/**
+ *是否有必要先转为javabean
+ * 再转为Put
+ */
+public class FastJsonUtils {
+
+    public static boolean isArray(String jsonStr){
+        if(StringUtils.isBlank(jsonStr))return false;
+       try {
+           Object obj = JSONObject.parse(jsonStr);
+           if (obj instanceof JSONArray){
+               return true;
+           }
+       }catch (Exception e){
+           return false;
+       }
+        return false;
+    }
+
+    public static boolean isObject(String jsonStr){
+        if(StringUtils.isBlank(jsonStr))return false;
+       try{
+           Object obj = JSONObject.parse(jsonStr);
+           if (obj instanceof JSONObject){
+               return true;
+           }
+       }catch (Exception e){
+          return false;
+       }
+        return false;
+    }
+
+    public static boolean isLegal(String jsonStr){
+        try{
+            Object obj = JSON.parse(jsonStr);
+            return true;
+        }catch (Exception e){
+            return false;
+        }
+    }
+
+    public static void objectAnalysis(String key, JSONObject obj, Map<String, String> map){
+        Set<String> set = obj.keySet();
+        Iterator<String> iter = set.iterator();
+        while (iter.hasNext()) {
+            String k = iter.next();
+            Object jsonValue = obj.get(k);
+            if (isObject(jsonValue.toString())) {
+                JSONObject objtmp = obj.parseObject(jsonValue.toString());
+                objectAnalysis((key + "_" + k), objtmp, map);
+            }else{
+                map.put(key + "_" + k, jsonValue.toString());
+            }
+        }
+    }
+
+    public static Put dataAnalysis(JSONObject jsonObj, String family){
+        Put put = new Put(jsonObj.get("uuid").toString().getBytes());
+        System.out.println("uuid"+":"+jsonObj.get("uuid").toString());
+        Set<String> set = jsonObj.keySet();
+        Iterator<String> iter = set.iterator();
+        while(iter.hasNext()) {
+            String key = iter.next();
+            if (!key.equals("uuid")){
+                Object jsonValue = jsonObj.get(key);
+                if (isObject(jsonValue.toString())) {
+                    Map map = new HashMap<String, String>();
+                    JSONObject obj = jsonObj.parseObject(jsonValue.toString());
+                    objectAnalysis(key, obj, map);
+                    Set<Map.Entry<String,String>> entries = map.entrySet();
+                    for (Map.Entry<String,String> entry: entries){
+                        put.addColumn(family.getBytes(), entry.getKey().getBytes(),entry.getValue().getBytes());
+                        System.out.println(entry.getKey()+":"+entry.getValue());
+                    }
+                }else {
+                    put.addColumn(family.getBytes(), key.getBytes(),jsonValue.toString().getBytes());
+                    System.out.println(key+":"+jsonValue.toString());
+                }
+            }
+        }
+        return put;
+    }
+
+}

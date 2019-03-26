@@ -1,0 +1,24 @@
+##solr≈‰÷√
+#solr.server=http://master:8983/solr/humanCollection
+#
+##mysql≈‰÷√
+#driver=com.mysql.jdbc.Driver
+##url=jdbc:mysql://115.157.201.164:3306/test?characterEncoding=UTF-8&autoReconnect=true&failOverReadOnly=false&maxReconnects=10000&useSSL=false
+#url=jdbc:mysql://master:3306/test?characterEncoding=UTF-8&useSSL=false
+#userName=root
+#password=Ast4HS
+#
+##kafka≈‰÷√
+#metadata.broker.list=master:9092
+##group.id=lx
+#topic.picture=test1
+#
+##“‘ÕºÀ—Õº≈‰÷√
+#picture.window=3
+#picture.split=30
+#picture.top=200
+#picture.ip=http://172.20.67.29:8080/bigdata-solr/
+#picture.query=INSERT INTO results (ack, uuid, distance) VALUES (?, ?, ?)
+
+
+hdfs.path=hdfs://master:8020

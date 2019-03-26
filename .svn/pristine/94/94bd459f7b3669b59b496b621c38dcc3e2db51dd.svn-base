@@ -1,0 +1,58 @@
+package com.qst.assistant
+
+import java.util.Properties
+import com.qst.utils.PropertiesUtils
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
+
+import scala.io.Source
+
+object MessageProducer {
+
+  //将json文件的数据插入hbase；
+  def produceFromFile(pathname: String): Unit = {
+    val prop: Properties = PropertiesUtils.load("conf/kafkaProducerConfiguration.properties")
+    var producer = new KafkaProducer[String, String](prop)
+    try {
+      val file = Source.fromFile(pathname)
+      for(line <- file.getLines()){
+        producer.send(new ProducerRecord[String, String]("test2", line)).get()
+      }
+      // producer.send(new ProducerRecord[String, String]("test2",args(0))).get()
+      println("send success--------------")
+    } catch {
+      case e: Exception => e.printStackTrace()
+    }finally {
+      producer.close()
+    }
+  }
+
+  def produceFromRandom(num : Int): Unit = {
+    var sds: StructuredDataService = new StructuredDataService()
+    val prop: Properties = PropertiesUtils.load("conf/kafkaProducerConfiguration.properties")
+    var producer = new KafkaProducer[String, String](prop)
+    try {
+
+      for (i <- 1 to num){
+        var line = sds.generateJsonData()
+        producer.send(new ProducerRecord[String, String]("test2", line)).get()
+      }
+
+      println("send success--------------")
+    }catch {
+      case e: Exception => e.printStackTrace()
+    }finally {
+      producer.close()
+    }
+
+  }
+
+  def main(args: Array[String]): Unit = {
+
+    if (args(0).equals("1")){
+      produceFromFile(args(1))
+    }else {
+      produceFromRandom(Integer.parseInt(args(1)))
+
+    }
+  }
+}

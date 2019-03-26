@@ -1,0 +1,20 @@
+package com.qst.assistant
+
+import java.util.Properties
+
+import com.qst.utils.PropertiesUtils
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
+
+object MessageProducer {
+  def main(args: Array[String]): Unit = {
+    val prop:Properties = PropertiesUtils.load("conf/kafkaProducerConfiguration.properties")
+    var producer = new KafkaProducer[String, String](prop)
+    try{
+
+      producer.send(new ProducerRecord[String, String]("test2",args(0))).get()
+      println("send success--------------")
+    }catch {
+      case e:Exception => e.printStackTrace()
+    }
+  }
+}

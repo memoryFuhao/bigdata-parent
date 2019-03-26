@@ -1,0 +1,40 @@
+package NewTest.utils;
+
+/**
+ * Created by liuxiang on 2018/12/14.
+ */
+public class QueryEntity {
+    private String id;
+    private String feature;
+    private String url;
+
+    public QueryEntity(String id, String feature, String url) {
+        this.id = id;
+        this.feature = feature;
+        this.url = url;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public String getFeature() {
+        return feature;
+    }
+
+    public void setFeature(String feature) {
+        this.feature = feature;
+    }
+
+    public String getUrl() {
+        return url;
+    }
+
+    public void setUrl(String url) {
+        this.url = url;
+    }
+}

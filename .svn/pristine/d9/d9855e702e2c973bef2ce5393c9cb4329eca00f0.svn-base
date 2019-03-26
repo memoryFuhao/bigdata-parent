@@ -1,0 +1,55 @@
+package Demo
+
+import NewTest.utils.ConnectPoolUtil
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+  * Created by liuxiang on 2018/12/7.
+  */
+object ConMysqlDemo {
+  def main(args: Array[String]): Unit = {
+    val sparkConf = new SparkConf();
+    sparkConf.setAppName("ConMysqlDemo").setMaster("local")
+    val sc = new SparkContext(sparkConf);
+    sc.setLogLevel("WARN");
+
+    val source = sc.textFile("D:\\IdeaProjects\\video-parent\\video-bigdata\\src\\main\\resources\\data\\ConMysql.txt")
+
+    val rdd = source.map(t => {
+      val key = t.split(" ")(0)
+      val cos = t.split(" ")(1).toDouble
+
+      new Tuple2[String, Tuple3[String, String, Double]](key, new Tuple3[String, String, Double]("aa", "bb", cos))
+    })
+
+    val orderedRdd = rdd.groupByKey().map(t => {
+      val uuid = t._1
+      val featureDist = t._2
+      var lists = List[(String, String, Double)]()
+      for (i <- featureDist) {
+        val id = i._1
+        val url = i._2
+        val dis = i._3
+        lists = ((id, url, dis)) :: lists
+      }
+      lists.sortBy(_._3).reverse.take(3)
+      new Tuple2[String, Iterable[(String, String, Double)]](uuid, lists)
+    })
+
+    //插入数据库
+    val con = ConnectPoolUtil.getConnection()
+    val ps = con.prepareStatement("INSERT INTO ConMysqlDemo (uuid, distance) VALUES (?, ?)")
+    orderedRdd.foreach(record => {
+      ps.setString(1, record._1)
+      val temp = record._2
+      for (i <- temp) {
+        ps.setString(2, i._1)
+        ps.setString(3, i._2)
+        ps.setDouble(4, i._3)
+      }
+      ps.execute()
+    })
+
+    ConnectPoolUtil.closeConn(ps, con)
+  }
+}

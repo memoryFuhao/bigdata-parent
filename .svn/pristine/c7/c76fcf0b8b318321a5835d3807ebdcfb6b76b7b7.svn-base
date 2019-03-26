@@ -1,0 +1,22 @@
+package Api.test
+
+/**
+  * Created by liuxiang on 2018/12/18.
+  */
+object test {
+  def main(args: Array[String]): Unit = {
+    val lines = 3466
+    val split = 2000 //分成50份
+    val foot = lines / split + 1
+    println(foot)
+    var count = 1
+    for (i <- 0 to lines by foot) {
+      val start = i
+      print(count + " " + start + " ")
+      count = count + 1
+      val end = start + foot - 1
+      println(end)
+    }
+    println(count)
+  }
+}
